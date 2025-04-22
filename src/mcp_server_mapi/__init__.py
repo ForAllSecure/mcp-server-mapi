@@ -4,6 +4,7 @@ import asyncio
 import logging
 from .server import serve
 
+@click.command()
 @click.option("-w", "--workspace", required=True, type=str, help="The user's Mayhem workspace")
 @click.option("-p", "--project", default="mcp-mapi-project", type=str, help="The user's Mayhem project")
 @click.option("-t", "--target", default="mcp-mapi-target", type=str, help="The user's Mayhem target")
