@@ -1,5 +1,6 @@
 import logging
 import subprocess
+import shlex
 from pydantic import BaseModel, Field
 from enum import Enum
 from mcp.server import Server
@@ -57,20 +58,30 @@ Include only specific rules. By default, we will include the following rules:
         description="""HTTP Archive (HAR) file to record details of the run"""
     )
 
+    header_auth: list[str] | None = Field(
+        description="""Authorization headers to use with mapi. Use this when dealing with an API that requires authentication.
+        Must be in the following format <header_key>:<header_value>.
+        """
+    )
+
     def command_line(self) -> str:
         options = [f"--url={self.url}"]
 
         if self.include_rules:
-            options.extend([f"--include-rule={rule}" for rule in self.include_rules])
+            options.extend([f"--include-rule={rule.value}" for rule in self.include_rules])
 
         if self.ignore_rules:
-            options.extend([f"--ignore-rule={rule}" for rule in self.ignore_rules])
+            options.extend([f"--ignore-rule={rule.value}" for rule in self.ignore_rules])
 
         if self.har:
             options.append(f"--har={self.har}")
 
         if self.zap:
             options.append("--zap")
+
+        if self.header_auth:
+            for auth in self.header_auth:
+                options.append(shlex.quote(f"--header-auth={auth}"))
 
         return " ".join(options)
 
@@ -118,7 +129,7 @@ class MapiTools(str, Enum):
 def run_command(logger: logging.Logger, command: str) -> str:
     logger.info(f"Running command: {command}")
     process = subprocess.Popen(
-        [*command.split()],
+        shlex.split(command),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -131,6 +142,9 @@ def run_command(logger: logging.Logger, command: str) -> str:
         captured.append(line)
 
     process.wait()
+
+    if len(captured) > 50:
+        captured = captured[-50:]
 
     return "".join(captured)
 
