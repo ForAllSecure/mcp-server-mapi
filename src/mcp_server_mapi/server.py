@@ -1,11 +1,13 @@
 import logging
 import subprocess
 import shlex
+import os
 from pydantic import BaseModel, Field
 from enum import Enum
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
+from pathlib import Path
 
 
 class Rule(str, Enum):
@@ -64,6 +66,10 @@ Include only specific rules. By default, we will include the following rules:
         """
     )
 
+    replay_issues: bool = Field(
+        description="Replay previous mapi issues. Default is false. Usually you should provide true if the user asks to."
+    )
+
     def command_line(self) -> str:
         options = [f"--url={self.url}"]
 
@@ -78,6 +84,9 @@ Include only specific rules. By default, we will include the following rules:
 
         if self.zap:
             options.append("--zap")
+
+        if not self.replay_issues:
+            options.append("--no-replay")
 
         if self.header_auth:
             for auth in self.header_auth:
@@ -100,7 +109,8 @@ How long to run. Longer runs will discover more edge cases in your API.
     )
     specification: str = Field(
         description="""
-Filesystem path to an OpenAPI 3 specification YAML or JSON file. We will attempt to convert Swagger 2.0 specifications, Postman 2.x collections or HTTP Archive (.har file) to OpenAPI 3 if those are provided.
+Filesystem path or url to an OpenAPI 3 specification in either YAML or JSON format.
+We will attempt to convert Swagger 2.0 specifications, Postman 2.x collections or HTTP Archive (.har file) to OpenAPI 3 if those are provided.
 """
     )
 
@@ -108,6 +118,18 @@ Filesystem path to an OpenAPI 3 specification YAML or JSON file. We will attempt
 
     def command_line(self, workspace: str, project: str, target: str) -> str:
         return f"mapi run {workspace}/{project}/{target} {self.duration} {self.specification} {self.options.command_line()}"
+
+
+class MapiDiscover(BaseModel):
+    host: str = Field(description="The host to scan", examples=["localhost"])
+    port: int = Field(description="The port to scan", examples=["80"])
+
+    @classmethod
+    def output_dir() -> str:
+        return f"{os.getcwd()}/mapi_discover"
+
+    def command_line(self) -> str:
+        return f"mapi discover --hosts={self.host} --ports={self.port} --output={MapiDiscover.output_dir()}"
 
 
 class MapiDefectList(BaseModel):
@@ -124,9 +146,10 @@ The Run ID to fetch defects from. The Run ID is the number of the URL provided w
 class MapiTools(str, Enum):
     RUN = "run"
     DEFECT_LIST = "defect_list"
+    DISCOVER = "discover"
 
 
-def run_command(logger: logging.Logger, command: str) -> str:
+def run_command(logger: logging.Logger, command: str) -> tuple[bool, str]:
     logger.info(f"Running command: {command}")
     process = subprocess.Popen(
         shlex.split(command),
@@ -141,19 +164,22 @@ def run_command(logger: logging.Logger, command: str) -> str:
         logger.info(line[:-1])
         captured.append(line)
 
-    process.wait()
+    return_code = process.wait()
 
     if len(captured) > 50:
         captured = captured[-50:]
 
-    return "".join(captured)
+    output = "".join(captured)
+    return return_code == 0, output
 
 
 def mapi_run(
     logger: logging.Logger, workspace: str, project: str, target: str, run: MapiRun
 ) -> str:
     command = run.command_line(workspace, project, target)
-    return run_command(logger, command)
+    success, output = run_command(logger, command)
+    prefix = "mapi run output" if success else "mapi run failed"
+    return f"{prefix}:{output}"
 
 
 def mapi_list_defects(
@@ -164,7 +190,20 @@ def mapi_list_defects(
     list: MapiDefectList,
 ) -> str:
     command = list.command_line(workspace, project, target)
-    return run_command(logger, command)
+    success, output = run_command(logger, command)
+    prefix = "mapi defects list output" if success else "mapi defects list failed"
+    return f"{prefix}:{output}"
+
+
+def mapi_discover(logger: logging.Logger, discover: MapiDiscover) -> str:
+    command = discover.command_line()
+    success, output = run_command(logger, command)
+
+    if success:
+        api_spec_paths = [str(f) for f in Path(MapiDiscover.output_dir()).iterdir()]
+        return f"Api specification paths: {api_spec_paths} (can be analyzed as is without further prioritization/processing)"
+    else:
+        return f"mapi discover failed:\n{output}"
 
 
 async def serve(workspace: str, project: str, target: str) -> None:
@@ -180,7 +219,7 @@ async def serve(workspace: str, project: str, target: str) -> None:
         return [
             Tool(
                 name=MapiTools.RUN,
-                description="Analyzes an API for vulnerabilities",
+                description="Analyzes an API for vulnerabilities. This tool requires an API specification in order to perform it's analysis.",
                 inputSchema=MapiRun.model_json_schema(),
             ),
             Tool(
@@ -188,6 +227,13 @@ async def serve(workspace: str, project: str, target: str) -> None:
                 description="Fetches the defects that were recorded for a specific run",
                 inputSchema=MapiDefectList.model_json_schema(),
             ),
+            Tool(
+                name=MapiTools.DISCOVER,
+                description="""A discovery tool that searches for API specifications.
+                If crawling with a crawler fails, the target might be a web API, in which case this
+                tool can be used to discover API specifications.""",
+                inputSchema=MapiDiscover.model_json_schema()
+            )
         ]
 
     @server.call_tool()
@@ -196,17 +242,17 @@ async def serve(workspace: str, project: str, target: str) -> None:
             case MapiTools.RUN:
                 mapi_run_args = MapiRun(**arguments)
                 result = mapi_run(logger, workspace, project, target, mapi_run_args)
-                return [TextContent(type="text", text=f"mapi run output:\n{result}")]
+                return [TextContent(type="text", text=result)]
             case MapiTools.DEFECT_LIST:
                 mapi_defect_list_args = MapiDefectList(**arguments)
                 result = mapi_list_defects(
                     logger, workspace, project, target, mapi_defect_list_args
                 )
-                return [
-                    TextContent(
-                        type="text", text=f"mapi defects list output:\n{result}"
-                    )
-                ]
+                return [TextContent(type="text", text=result)]
+            case MapiTools.DISCOVER:
+                mapi_discover_args = MapiDiscover(**arguments)
+                result = mapi_discover(logger, mapi_discover_args)
+                return [TextContent(type="text", text=result)]
             case _:
                 raise ValueError(f"Unknown tool: {name}")
 
