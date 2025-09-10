@@ -1,33 +1,31 @@
-# mcp-server-mapi
+# MCP Server for mapi
 
-This repository contains the implementation of Model Context Protocol server for mapi cli.
+A Model Context Protocol (MCP) server for the mapi cli.
 
-## Setup
-Right now, this is very early stage and we don't actually provide a _proper_ python package.
+## Build
 
-Just clone this repository and from your mcp client project where you want to use this server run:
+We recommend building and running the server as a docker container. To build:
 
-```bash
-uv add "mcp-server-mapi @ <path_to_cloned_folder>"
+```sh
+docker build -t mcp-server-mapi .
 ```
 
-## Usage
+## Run
 
-Add the following to your `mcp_agent.config.yaml` under `servers` section:
+Invoke the MCP server as follows:
 
-```yaml
-mapi:
-    command: "uv"
-    args: ["run", "mcp-server-mapi", "-w", "<your_mayhem_workspace>"]
+```sh
+docker run -i mcp-server-mapi uv run mcp-server-mapi mcp
 ```
 
-You can also control the project and target name with `-p=<project_name>` and `-t=<target_name>` respectively.
-Finally, you can configure the logging level by passing `-v` for logging level `INFO` (default) or `-vv` for more verbose output.
+If you're running in local dev mode, you can skip the docker part and just invoke uv.
 
-## Tools
+## Connect to Claude
+
+If you're using Claude Desktop you can hook the MCP server to it using the claude_desktop_config.json file - just make sure you include your API token in it.
+
+## Current Tools
+
+### mapi_discover
 
 ### mapi_run
-Performs a mapi run
-
-### mapi_defects_list
-Fetches the defects observed for a run

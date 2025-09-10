@@ -43,7 +43,7 @@ class DiscoverArgs(BaseModel):
     basic_auth: Optional[str] = Field(None, description='--basic-auth "username:password"')
     endpoints_file: Optional[str] = Field(None, description="--endpoints-file <file>")
     output_dir: str = Field("api-specs", description="--output <output-dir> (default api-specs)")
-    request_timeout: str = Field("5 seconds", description='--request-timeout (e.g., "1m42s", "5s")')
+    request_timeout: str = Field("5 seconds", description='--request-timeout (e.g., "1m42s", "5s") - only required for very slow hosts')
     rate_limit: int = Field(1000, ge=1, description="--rate-limit <int> (default 1000)")
 
     # OPTIONS (repeatable)
@@ -54,7 +54,7 @@ class DiscoverArgs(BaseModel):
     redact_header: List[str] = Field(default_factory=list, description='--redact-header "name"...')
 
     # Target selection (mutually exclusive)
-    hosts: Optional[List[str]] = Field(None, description='-h/--hosts "host1,host2"')
+    hosts: Optional[List[str]] = Field(None, description='-h/--hosts "host1,host2" (best option to start with, just make sure to *not* include schemes/ports/paths when specifying the option)')
     cidrs: Optional[List[str]] = Field(None, description='--cidrs "10.0.0.0/24,10.0.1.0/24"')
     domains: Optional[List[str]] = Field(None, description='--domains "example.com,foo.com"')
 
@@ -187,7 +187,7 @@ async def mapi_discover(ctx: Context, args: DiscoverArgs) -> str:
     # Run it
     log.info("Running: %s", " ".join(cmd))
     try:
-        return await run_cli(cmd, timeout_s=300.0)
+        return await run_cli(cmd, timeout_s=600.0)
     except CLIRuntimeError as e:
         raise RuntimeError(str(e)) from None
 
@@ -197,9 +197,9 @@ async def mapi_discover(ctx: Context, args: DiscoverArgs) -> str:
 # -----------------------------
 class RunArgs(BaseModel):
     # --- required positional args ---
-    api_target: str = Field(..., description="<api-target> (e.g., 'petstore')")
-    duration: str = Field(..., description="<duration> e.g., 'auto', '30s', '2h20m'")
-    specification: str = Field(..., description="<specification> path to OpenAPI/Swagger/Postman/HAR")
+    api_target: str = Field(..., description="<api-target> (project/target name to push results to, e.g., 'projectname/targetname')")
+    duration: str = Field(..., description="<duration> e.g., 'auto', '30s', '2h20m' - strongly recommend 'auto'")
+    specification: str = Field(..., description="<specification> path to OpenAPI/Swagger/Postman/HAR file on disk")
 
     # --- flags ---
     verify_tls: bool = False
@@ -215,7 +215,7 @@ class RunArgs(BaseModel):
     skip_scm_detection: bool = False
     mutable_postman_variables: bool = False
     zap: bool = False
-    local: bool = False
+    local: bool = Field(False, description="--local (for local scans, requires enterprise plan)")
 
     # --- simple options ---
     url: Optional[str] = None
@@ -235,7 +235,7 @@ class RunArgs(BaseModel):
 
     config: Optional[str] = None
     har: Optional[str] = None
-    github_api_url: str = Field("https://api.github.com", description="--github-api-url")
+    github_api_url: str = Field("https://api.github.com", description="--github-api-url <url> (typically not required to be set)")
     scm_remote: Optional[str] = None
     scm_branch: Optional[str] = None
     scm_parent_sha: Optional[str] = None
@@ -309,7 +309,10 @@ class RunArgs(BaseModel):
 # -----------------------------
 @mcp.tool(description="Run `mapi run` with the provided options.")
 async def mapi_run(ctx: Context, args: RunArgs) -> str:
-    cmd: list[str] = [CLI_BIN, "run"]
+    cmd: list[str] = [MAPI_BIN, "run"]
+
+    # first, the required positionals:
+    cmd += [args.api_target, args.duration, args.specification]
 
     # flags
     _add_flag(cmd, args.verify_tls, "--verify-tls")
@@ -410,13 +413,10 @@ async def mapi_run(ctx: Context, args: RunArgs) -> str:
     _add_opt(cmd, "--p12cert", args.p12cert)
     _add_opt(cmd, "--p12password", args.p12password)
 
-    # finally, the required positionals:
-    cmd += [args.api_target, args.duration, args.specification]
-
     log.info("Running: %s", " ".join(cmd))
     try:
         # mapi runs can be long; give them room
-        return await run_cli(cmd, timeout_s=60 * 60)  # 1 hour cap; adjust as needed
+        return await run_cli(cmd, timeout_s=3600)  # 1 hour cap; adjust as needed
     except CLIRuntimeError as e:
         raise RuntimeError(str(e)) from None
 
