@@ -116,7 +116,7 @@ def _comma_join(values: List[str | int]) -> str:
 # -----------------------------
 # MCP tool for `mapi discover`
 # -----------------------------
-@mcp.tool(description="Run `mapi discover` with the provided options.")
+@mcp.tool(description="Run `mapi discover` with the provided options. Use `mapi discover` to discover API specifications that you can scan later on with `mapi run`.")
 async def mapi_discover(ctx: Context, args: DiscoverArgs) -> str:
     cmd: list[str] = [MAPI_BIN, "discover"]
 
@@ -307,7 +307,7 @@ class RunArgs(BaseModel):
 # -----------------------------
 # MCP tool for `mapi run`
 # -----------------------------
-@mcp.tool(description="Run `mapi run` with the provided options.")
+@mcp.tool(description="Run `mapi run` with the provided options. Use `mapi run` to scan an API specification and push results to the specified project/target.")
 async def mapi_run(ctx: Context, args: RunArgs) -> str:
     cmd: list[str] = [MAPI_BIN, "run"]
 
