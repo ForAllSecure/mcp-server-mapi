@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "mapi-server": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-e",
+        "MAYHEM_TOKEN=your-token-here",
+        "-i",
+        "mcp-server-mapi",
+        "uv",
+        "run",
+        "mcp-server-mapi",
+        "mcp"
+      ]
+    }
+  }
+}
