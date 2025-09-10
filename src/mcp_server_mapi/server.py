@@ -198,7 +198,7 @@ async def mapi_discover(ctx: Context, args: DiscoverArgs) -> str:
 class RunArgs(BaseModel):
     # --- required positional args ---
     api_target: str = Field(..., description="<api-target> (project/target name to push results to, e.g., 'projectname/targetname')")
-    duration: str = Field(..., description="<duration> e.g., 'auto', '30s', '2h20m' - strongly recommend 'auto'")
+    duration: str = Field(..., description="<duration> e.g., 'auto', '30s', '2h20m' - strongly recommend '30s' to get started")
     specification: str = Field(..., description="<specification> path to OpenAPI/Swagger/Postman/HAR file on disk")
 
     # --- flags ---
@@ -416,7 +416,7 @@ async def mapi_run(ctx: Context, args: RunArgs) -> str:
     log.info("Running: %s", " ".join(cmd))
     try:
         # mapi runs can be long; give them room
-        return await run_cli(cmd, timeout_s=3600)  # 1 hour cap; adjust as needed
+        return await run_cli(cmd, timeout_s=120)  # 2 minutes cap; adjust as needed
     except CLIRuntimeError as e:
         raise RuntimeError(str(e)) from None
 
