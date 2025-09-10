@@ -5,7 +5,7 @@ import logging
 from typing import Literal, List, Optional
 
 from pydantic import BaseModel, Field, model_validator, field_validator
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.fastmcp import FastMCP
 
 # --- Logging: IMPORTANT ---
 # Never write to stdout on stdio servers (keeps JSON-RPC clean).
@@ -117,7 +117,7 @@ def _comma_join(values: List[str | int]) -> str:
 # MCP tool for `mapi discover`
 # -----------------------------
 @mcp.tool(description="Run `mapi discover` with the provided options. Use `mapi discover` to discover API specifications that you can scan later on with `mapi run`.")
-async def mapi_discover(ctx: Context, args: DiscoverArgs) -> str:
+async def mapi_discover(args: DiscoverArgs) -> str:
     cmd: list[str] = [MAPI_BIN, "discover"]
 
     # FLAGS
@@ -218,12 +218,12 @@ class RunArgs(BaseModel):
     local: bool = Field(False, description="--local (for local scans, requires enterprise plan)")
 
     # --- simple options ---
-    url: Optional[str] = None
+    url: Optional[str] = Field(None, required=True, description="--url <parsed-url> (base URL for the API, e.g., https://localhost:8000)")
     min_request_count: Optional[int] = Field(None, ge=1)
     concurrency: Optional[int] = Field(None, ge=1)
     rate_limit: Optional[int] = Field(None, ge=1)
-    max_memory_usage: str = Field("80%", description='e.g., "60%" or "6GB"')
-    max_response_size: str = Field("100KB", description='e.g., "100B", "500KB"')
+    max_memory_usage: Optional[str] = Field(None, description='e.g., "60%" or "6GB"')
+    max_response_size: Optional[str] = Field(None, description='e.g., "100B", "500KB"')
     cacert: Optional[str] = None
     cert: Optional[str] = None
     key: Optional[str] = None
@@ -235,7 +235,7 @@ class RunArgs(BaseModel):
 
     config: Optional[str] = None
     har: Optional[str] = None
-    github_api_url: str = Field("https://api.github.com", description="--github-api-url <url> (typically not required to be set)")
+    github_api_url: Optional[str] = Field(None, description="--github-api-url <url> (typically not required to be set)")
     scm_remote: Optional[str] = None
     scm_branch: Optional[str] = None
     scm_parent_sha: Optional[str] = None
@@ -249,13 +249,13 @@ class RunArgs(BaseModel):
     postman_environment_id: Optional[str] = None
     postman_global_variables: Optional[str] = None
 
-    zap_min_risk_code: int = Field(1, ge=0, le=3)
+    zap_min_risk_code: Optional[int] = Field(None, ge=0, le=3)
     zap_import_json_results: Optional[str] = None
-    zap_docker_tag: str = Field("zaproxy/zap-stable:2.14.0")
+    zap_docker_tag: Optional[str] = Field(None, description="Docker image tag for ZAP (default: 'zaproxy/zap-stable:2.14.0')")
 
-    upload_sample_requests_per_endpoint: int = Field(5, ge=0)
+    upload_sample_requests_per_endpoint: Optional[int] = Field(None, ge=0)
 
-    request_timeout: str = Field("5 seconds")
+    request_timeout: Optional[str] = Field("5 seconds")
 
     basic_auth: Optional[str] = None
 
@@ -308,7 +308,7 @@ class RunArgs(BaseModel):
 # MCP tool for `mapi run`
 # -----------------------------
 @mcp.tool(description="Run `mapi run` with the provided options. Use `mapi run` to scan an API specification and push results to the specified project/target.")
-async def mapi_run(ctx: Context, args: RunArgs) -> str:
+async def mapi_run(args: RunArgs) -> str:
     cmd: list[str] = [MAPI_BIN, "run"]
 
     # first, the required positionals:

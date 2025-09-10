@@ -1,2 +1,4 @@
 Dockerfile
 claude_desktop_config.json
+.git/
+.gitignore
