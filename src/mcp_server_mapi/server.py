@@ -1,4 +1,6 @@
 from __future__ import annotations
+from pathlib import Path
+import asyncio
 import os
 import sys
 import logging
@@ -419,6 +421,142 @@ async def mapi_run(args: RunArgs) -> str:
         return await run_cli(cmd, timeout_s=120)  # 2 minutes cap; adjust as needed
     except CLIRuntimeError as e:
         raise RuntimeError(str(e)) from None
+
+
+@mcp.tool(description="Execute arbitrary bash commands on the MAPI server host - this is useful to inspect or manipulate mapi findings.")
+async def bash(command: str, cwd: str | None = None) -> str:
+    """Execute bash commands.
+
+    Args:
+        command: The bash command to execute
+        cwd: Working directory for the command (optional)
+    """
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+            exit_code = proc.returncode or 0
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return "Error: Command timed out after 1 minute"
+
+        output = f"Command executed with exit code: {exit_code}\n\n"
+        if stdout:
+            output += f"STDOUT:\n{stdout.decode()}\n"
+        if stderr:
+            output += f"STDERR:\n{stderr.decode()}\n"
+
+        return output
+
+    except Exception as e:
+        return f"Error executing command: {str(e)}"
+
+
+@mcp.tool(description="Read contents of a file on the MAPI server host, optionally specifying line range.")
+def read_file(
+    file_path: str, line_start: int | None = None, line_end: int | None = None
+) -> str:
+    """Read contents of a file, optionally specifying line range.
+
+    Args:
+        file_path: Path to the file to read
+        line_start: Starting line number (1-based, optional)
+        line_end: Ending line number (1-based, optional)
+    """
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            return f"Error: File not found at {file_path}"
+
+        if not path.is_file():
+            return f"Error: {file_path} is not a file"
+
+        content = path.read_text()
+
+        if line_start is not None or line_end is not None:
+            lines = content.splitlines()
+            start_idx = (line_start - 1) if line_start else 0
+            end_idx = line_end if line_end else len(lines)
+
+            if start_idx < 0 or start_idx >= len(lines):
+                return f"Error: Starting line {line_start} is out of range (file has {len(lines)} lines)"
+
+            if end_idx < start_idx:
+                return f"Error: End line {line_end} cannot be before start line {line_start}"
+
+            selected_lines = lines[start_idx:end_idx]
+            return "\n".join(
+                f"{i + start_idx + 1:4d}→{line}"
+                for i, line in enumerate(selected_lines)
+            )
+
+        # Return full file with line numbers
+        lines = content.splitlines()
+        return "\n".join(f"{i + 1:4d}→{line}" for i, line in enumerate(lines))
+
+    except Exception as e:
+        return f"Error reading file: {str(e)}"
+
+
+@mcp.tool(description="Edit a file on the MAPI server host with find-and-replace operations.")
+def edit_file(
+    file_path: str, old_text: str, new_text: str, replace_all: bool = False
+) -> str:
+    """Edit a file with find-and-replace operations.
+
+    IMPORTANT: You should read the file first using read_file() before editing
+    to understand the context and ensure the old_text exists.
+
+    Args:
+        file_path: Path to the file to edit
+        old_text: Text to find and replace (must match exactly including whitespace)
+        new_text: Text to replace with
+        replace_all: If True, replace all occurrences; if False, replace only first occurrence
+    """
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            return f"Error: File not found at {file_path}"
+
+        if not path.is_file():
+            return f"Error: {file_path} is not a file"
+
+        # Read current content
+        content = path.read_text()
+
+        # Check if old_text exists
+        if old_text not in content:
+            return f"Error: Text to replace not found in {file_path}. Please read the file first to verify the exact text to replace."
+
+        # Count occurrences for informative output
+        occurrence_count = content.count(old_text)
+
+        # Perform replacement
+        if replace_all:
+            new_content = content.replace(old_text, new_text)
+            replaced_count = occurrence_count
+        else:
+            new_content = content.replace(old_text, new_text, 1)
+            replaced_count = 1
+
+        # Validate that content actually changed
+        if new_content == content:
+            return f"Warning: No changes made to {file_path} (old_text and new_text are identical)"
+
+        # Write the updated content
+        path.write_text(new_content)
+
+        return f"Successfully replaced {replaced_count} occurrence(s) of text in {file_path} (found {occurrence_count} total occurrences)"
+
+    except Exception as e:
+        return f"Error editing file: {str(e)}"
 
 
 async def version() -> str:
