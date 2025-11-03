@@ -27,4 +27,5 @@ jobs:
         context: .
         file: ./Dockerfile
         push: true
-        tags: ghcr.io/${{ github.repository }}:latest
+        # make sure repository is converted to lowercase
+        tags: ghcr.io/forallsecure/mcp-server-mapi:latest
