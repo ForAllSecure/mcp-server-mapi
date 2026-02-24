@@ -23,8 +23,8 @@ Run a scan to check an API for defects.
 
 ## Usage
 
-MCP servers are designed to be used with AI applications like Claude or ChatGPT.
-This usage guide explains how to use this project with AI applications.
+MCP servers are designed to be used with AI applications like Claude, Cursor, or
+ChatGPT. This usage guide explains how to use this project with AI applications.
 
 ### Dependencies
 
@@ -73,6 +73,33 @@ steps are outlined in the
 [official documentation](https://code.visualstudio.com/docs/copilot/customization/mcp-servers#_use-mcp-tools-in-chat)
 for using MCP servers with Visual Studio code.
 
+### Use with Cursor
+
+Add the following to `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json`
+for global access), replacing `your-token-here` with your Mayhem API token:
+
+```json
+{
+  "mcpServers": {
+    "mapi": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "MAYHEM_TOKEN",
+        "ghcr.io/forallsecure/mcp-server-mapi:latest",
+        "uv", "run", "mcp-server-mapi", "mcp"
+      ],
+      "env": {
+        "MAYHEM_TOKEN": "your-token-here"
+      }
+    }
+  }
+}
+```
+
+A reference [`.cursor/mcp.json`](.cursor/mcp.json) file is also included in this
+repository.
+
 ### Use with Claude
 
 If you're using Claude Desktop you can hook the MCP server to it using the
@@ -98,8 +125,8 @@ git clone git@github.com:ForAllSecure/mcp-server-mapi.git
 
 ### Run
 
-Use uv to run the MCP server for `mapi`
+Use uv to run the MCP server for `mapi`:
 
 ```sh
-uv
+MAYHEM_TOKEN=your-token-here uv run mcp-server-mapi mcp
 ```

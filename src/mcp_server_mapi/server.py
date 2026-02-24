@@ -2,6 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 import asyncio
 import os
+import re
 import sys
 import logging
 from typing import Literal, List, Optional
@@ -115,6 +116,18 @@ def _comma_join(values: List[str | int]) -> str:
     return ",".join(str(v) for v in values)
 
 
+_DURATION_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$")
+
+
+def parse_duration(raw: str) -> float:
+    """Parse a human duration string like '30s', '2h20m', '1m42s' into seconds."""
+    m = _DURATION_RE.match(raw.strip())
+    if not m or not any(m.groups()):
+        raise ValueError(f"Cannot parse duration: {raw!r}")
+    h, mn, s = (int(g) if g else 0 for g in m.groups())
+    return h * 3600.0 + mn * 60.0 + s
+
+
 # -----------------------------
 # MCP tool for `mapi discover`
 # -----------------------------
@@ -201,7 +214,7 @@ async def mapi_discover(args: DiscoverArgs) -> str:
     log.info("Running: %s", " ".join(cmd))
     try:
         return await run_cli(cmd, timeout_s=600.0)
-    except CLIRuntimeError as e:
+    except CLIRuntimeError as e:  # only raised on timeout, not non-zero exit
         raise RuntimeError(str(e)) from None
 
 
@@ -231,7 +244,7 @@ class RunArgs(BaseModel):
     local: bool = Field(False, description="--local (for local scans, requires enterprise plan)")
 
     # --- simple options ---
-    url: Optional[str] = Field(None, required=True, description="--url <parsed-url> (base URL for the API, e.g., https://localhost:8000)")
+    url: str = Field(..., description="--url <parsed-url> (base URL for the API, e.g., https://localhost:8000)")
     min_request_count: Optional[int] = Field(None, ge=1)
     concurrency: Optional[int] = Field(None, ge=1)
     rate_limit: Optional[int] = Field(None, ge=1)
@@ -310,12 +323,24 @@ class RunArgs(BaseModel):
     p12cert: Optional[str] = None
     p12password: Optional[str] = None
 
+    process_timeout: Optional[float] = Field(None, ge=30, description="Maximum seconds to wait for the mapi process to complete (dynamically set from duration if not provided)")
+
     @field_validator("duration")
     @classmethod
     def _duration_nonempty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("duration must be non-empty (e.g., 'auto', '30s', '2h20m')")
         return v
+
+    @model_validator(mode="after")
+    def _set_timeout(self):
+        if self.process_timeout is not None:
+            return self
+        if self.duration == "auto":
+            self.process_timeout = 1800.0
+        else:
+            self.process_timeout = parse_duration(self.duration) + 30.0
+        return self
 
 # -----------------------------
 # MCP tool for `mapi run`
@@ -447,9 +472,8 @@ async def mapi_run(args: RunArgs) -> str:
 
     log.info("Running: %s", " ".join(cmd))
     try:
-        # mapi runs can be long; give them room
-        return await run_cli(cmd, timeout_s=120)  # 2 minutes cap; adjust as needed
-    except CLIRuntimeError as e:
+        return await run_cli(cmd, timeout_s=args.process_timeout)
+    except CLIRuntimeError as e:  # only raised on timeout, not non-zero exit
         raise RuntimeError(str(e)) from None
 
 
